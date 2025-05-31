@@ -1,0 +1,64 @@
+- name: Deploy Dispatcharr Web UI
+  hosts: master
+  gather_facts: false
+  vars:
+    desired_state: "present"
+  tasks:
+    - name: Deploy Dispatcharr Web
+      kubernetes.core.k8s:
+        kubeconfig: /etc/rancher/k3s/k3s.yaml
+        state: "{{ desired_state }}"
+        definition:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: dispatcharr-web
+            namespace: livetv
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: dispatcharr-web
+            template:
+              metadata:
+                labels:
+                  app: dispatcharr-web
+              spec:
+                containers:
+                  - name: dispatcharr-web
+                    image: ghcr.io/dispatcharr/dispatcharr:0.5.1-arm64
+                    ports:
+                      - containerPort: 9191
+                    env:
+                      - name: POSTGRES_HOST
+                        value: dispatcharr-db
+                      - name: POSTGRES_DB
+                        value: dispatcharr
+                      - name: POSTGRES_USER
+                        value: dispatch
+                      - name: POSTGRES_PASSWORD
+                        value: secret
+                      - name: REDIS_HOST
+                        value: dispatcharr-redis
+                      - name: CELERY_BROKER_URL
+                        value: redis://dispatcharr-redis:6379/0
+                      - name: DISPATCHARR_LOG_LEVEL
+                        value: info
+
+    - name: Create LoadBalancer Service for Dispatcharr Web
+      kubernetes.core.k8s:
+        kubeconfig: /etc/rancher/k3s/k3s.yaml
+        state: "{{ desired_state }}"
+        definition:
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: dispatcharr-web
+            namespace: livetv
+          spec:
+            type: LoadBalancer
+            ports:
+              - port: 9191
+                targetPort: 9191
+            selector:
+              app: dispatcharr-web

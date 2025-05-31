@@ -1,0 +1,61 @@
+- name: Deploy Dispatcharr Celery Worker
+  hosts: master
+  gather_facts: false
+  vars:
+    desired_state: "present"
+  tasks:
+    - name: Create Celery PVC
+      kubernetes.core.k8s:
+        kubeconfig: /etc/rancher/k3s/k3s.yaml
+        state: "{{ desired_state }}"
+        definition:
+          apiVersion: v1
+          kind: PersistentVolumeClaim
+          metadata:
+            namespace: livetv
+            name: celery-data
+          spec:
+            accessModes:
+              - ReadWriteOnce
+            resources:
+              requests:
+                storage: 1Gi
+
+    - name: Deploy Dispatcharr Celery Worker
+      kubernetes.core.k8s:
+        kubeconfig: /etc/rancher/k3s/k3s.yaml
+        state: "{{ desired_state }}"
+        definition:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: dispatcharr-celery
+            namespace: livetv
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: dispatcharr-celery
+            template:
+              metadata:
+                labels:
+                  app: dispatcharr-celery
+              spec:
+                containers:
+                  - name: dispatcharr-celery
+                    image: ghcr.io/dispatcharr/dispatcharr:0.5.1-arm64
+                    command: ["celery"]
+                    args: ["-A", "dispatcharr", "worker", "-l", "info"]
+                    env:
+                      - name: POSTGRES_HOST
+                        value: dispatcharr-db
+                      - name: POSTGRES_DB
+                        value: dispatcharr
+                      - name: POSTGRES_USER
+                        value: dispatch
+                      - name: POSTGRES_PASSWORD
+                        value: secret
+                      - name: REDIS_HOST
+                        value: dispatcharr-redis
+                      - name: CELERY_BROKER_URL
+                        value: redis://dispatcharr-redis:6379/0

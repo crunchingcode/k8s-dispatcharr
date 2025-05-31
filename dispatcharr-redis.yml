@@ -1,0 +1,72 @@
+- name: Deploy Dispatcharr Redis
+  hosts: master
+  gather_facts: false
+  vars:
+    desired_state: "present"
+  tasks:
+    - name: Create Redis PVC
+      kubernetes.core.k8s:
+        kubeconfig: /etc/rancher/k3s/k3s.yaml
+        state: "{{ desired_state }}"
+        definition:
+          apiVersion: v1
+          kind: PersistentVolumeClaim
+          metadata:
+            namespace: livetv
+            name: redis-data
+          spec:
+            accessModes:
+              - ReadWriteOnce
+            resources:
+              requests:
+                storage: 1Gi
+
+    - name: Deploy Redis
+      kubernetes.core.k8s:
+        kubeconfig: /etc/rancher/k3s/k3s.yaml
+        state: "{{ desired_state }}"
+        definition:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: dispatcharr-redis
+            namespace: livetv
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: dispatcharr-redis
+            template:
+              metadata:
+                labels:
+                  app: dispatcharr-redis
+              spec:
+                containers:
+                  - name: redis
+                    image: redis:latest
+                    ports:
+                      - containerPort: 6379
+                    volumeMounts:
+                      - name: redis-data
+                        mountPath: /data
+                volumes:
+                  - name: redis-data
+                    persistentVolumeClaim:
+                      claimName: redis-data
+
+    - name: Create Redis Service
+      kubernetes.core.k8s:
+        kubeconfig: /etc/rancher/k3s/k3s.yaml
+        state: "{{ desired_state }}"
+        definition:
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: dispatcharr-redis
+            namespace: livetv
+          spec:
+            ports:
+              - port: 6379
+                targetPort: 6379
+            selector:
+              app: dispatcharr-redis

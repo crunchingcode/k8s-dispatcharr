@@ -1,0 +1,14 @@
+- name: Create Namespace
+  import_playbook: dispatcharr-namespace.yml
+
+- name: Run PostgreSQL Playbook
+  import_playbook: dispatcharr-db.yml
+
+- name: Run Redis Playbook
+  import_playbook: dispatcharr-redis.yml
+
+- name: Run Web Playbook
+  import_playbook: dispatcharr-web.yml
+
+- name: Run Celery Playbook
+  import_playbook: dispatcharr-celery.yml

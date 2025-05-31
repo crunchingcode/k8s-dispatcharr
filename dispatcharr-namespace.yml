@@ -1,0 +1,13 @@
+- name: Ensure livetv namespace exists
+  hosts: master
+  gather_facts: false
+  tasks:
+    - name: Create namespace livetv
+      kubernetes.core.k8s:
+        kubeconfig: /etc/rancher/k3s/k3s.yaml
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: livetv
