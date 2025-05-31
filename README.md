@@ -3,4 +3,6 @@ ansible playbook for k8s and dispatcharr.  This runs dispatcharr modularly.  the
 
 You should add a definition in vars file to include the postgres password and any other secret/password definitions in the playbook(s).
 
+This also assumes you want the namespace livetv.  Change it throughout if you want something different.
+
 Doug
