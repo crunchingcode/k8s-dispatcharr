@@ -1,0 +1,5 @@
+ansible_connection: ssh
+ansible_user: your-username-here
+ansible_ssh_pass: your-password-here
+k3s_token: "your-k3s-token-here"
+

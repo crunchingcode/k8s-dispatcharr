@@ -1,0 +1,269 @@
+- name: dispatcharr Modular Deployment with MetalLB
+  hosts: master
+  gather_facts: false
+  vars:
+    desired_state: "present"
+  tasks:
+    - name: Create namespace for dispatcharr
+      kubernetes.core.k8s:
+        kubeconfig: /etc/rancher/k3s/k3s.yaml
+        state: "{{ desired_state }}"
+        name: livetv
+        api_version: v1
+        kind: Namespace
+
+    - name: Create PostgreSQL PVC
+      kubernetes.core.k8s:
+        kubeconfig: /etc/rancher/k3s/k3s.yaml
+        state: "{{ desired_state }}"
+        definition:
+          apiVersion: v1
+          kind: PersistentVolumeClaim
+          metadata:
+            namespace: livetv
+            name: postgres-data
+          spec:
+            accessModes:
+              - ReadWriteOnce
+            resources:
+              requests:
+                storage: 5Gi
+
+    - name: Create Redis PVC
+      kubernetes.core.k8s:
+        kubeconfig: /etc/rancher/k3s/k3s.yaml
+        state: "{{ desired_state }}"
+        definition:
+          apiVersion: v1
+          kind: PersistentVolumeClaim
+          metadata:
+            namespace: livetv
+            name: redis-data
+          spec:
+            accessModes:
+              - ReadWriteOnce
+            resources:
+              requests:
+                storage: 1Gi
+
+    - name: Create Celery PVC
+      kubernetes.core.k8s:
+        kubeconfig: /etc/rancher/k3s/k3s.yaml
+        state: "{{ desired_state }}"
+        definition:
+          apiVersion: v1
+          kind: PersistentVolumeClaim
+          metadata:
+            namespace: livetv
+            name: celery-data
+          spec:
+            accessModes:
+              - ReadWriteOnce
+            resources:
+              requests:
+                storage: 1Gi
+
+    - name: Deploy PostgreSQL
+      kubernetes.core.k8s:
+        kubeconfig: /etc/rancher/k3s/k3s.yaml
+        state: "{{ desired_state }}"
+        definition:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: dispatcharr-db
+            namespace: livetv
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: dispatcharr-db
+            template:
+              metadata:
+                labels:
+                  app: dispatcharr-db
+              spec:
+                containers:
+                  - name: postgres
+                    image: postgres:14
+                    env:
+                      - name: PGDATA
+                        value: /var/lib/postgresql/data
+                      - name: POSTGRES_DB
+                        value: "dispatcharr"
+                      - name: POSTGRES_USER
+                        value: "dispatch"
+                      - name: POSTGRES_PASSWORD
+                        value: "secret"
+                    volumeMounts:
+                      - name: postgres-data
+                        mountPath: /var/lib/postgresql
+                volumes:
+                  - name: postgres-data
+                    persistentVolumeClaim:
+                      claimName: postgres-data
+
+    - name: Create PostgreSQL Service
+      kubernetes.core.k8s:
+        kubeconfig: /etc/rancher/k3s/k3s.yaml
+        state: "{{ desired_state }}"
+        definition:
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: dispatcharr-db
+            namespace: livetv
+          spec:
+            ports:
+              - port: 5432
+                targetPort: 5432
+            selector:
+              app: dispatcharr-db
+
+    - name: Deploy Redis
+      kubernetes.core.k8s:
+        kubeconfig: /etc/rancher/k3s/k3s.yaml
+        state: "{{ desired_state }}"
+        definition:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: dispatcharr-redis
+            namespace: livetv
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: dispatcharr-redis
+            template:
+              metadata:
+                labels:
+                  app: dispatcharr-redis
+              spec:
+                containers:
+                  - name: redis
+                    image: redis:latest
+                    ports:
+                      - containerPort: 6379
+                    volumeMounts:
+                      - name: redis-data
+                        mountPath: /data
+                volumes:
+                  - name: redis-data
+                    persistentVolumeClaim:
+                      claimName: redis-data
+
+    - name: Create Redis Service
+      kubernetes.core.k8s:
+        kubeconfig: /etc/rancher/k3s/k3s.yaml
+        state: "{{ desired_state }}"
+        definition:
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: dispatcharr-redis
+            namespace: livetv
+          spec:
+            ports:
+              - port: 6379
+                targetPort: 6379
+            selector:
+              app: dispatcharr-redis
+
+    - name: Deploy Dispatcharr Web
+      kubernetes.core.k8s:
+        kubeconfig: /etc/rancher/k3s/k3s.yaml
+        state: "{{ desired_state }}"
+        definition:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: dispatcharr-web
+            namespace: livetv
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: dispatcharr-web
+            template:
+              metadata:
+                labels:
+                  app: dispatcharr-web
+              spec:
+                containers:
+                  - name: dispatcharr-web
+                    image: ghcr.io/dispatcharr/dispatcharr:0.5.1-arm64
+                    ports:
+                      - containerPort: 9191
+                    env:
+                      - name: POSTGRES_HOST
+                        value: dispatcharr-db
+                      - name: POSTGRES_DB
+                        value: dispatcharr
+                      - name: POSTGRES_USER
+                        value: dispatch
+                      - name: POSTGRES_PASSWORD
+                        value: secret
+                      - name: REDIS_HOST
+                        value: dispatcharr-redis
+                      - name: CELERY_BROKER_URL
+                        value: redis://dispatcharr-redis:6379/0
+                      - name: DISPATCHARR_LOG_LEVEL
+                        value: info
+
+    - name: Create LoadBalancer Service for Dispatcharr Web
+      kubernetes.core.k8s:
+        kubeconfig: /etc/rancher/k3s/k3s.yaml
+        state: "{{ desired_state }}"
+        definition:
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: dispatcharr-web
+            namespace: livetv
+          spec:
+            type: LoadBalancer
+            ports:
+              - port: 9191
+                targetPort: 9191
+            selector:
+              app: dispatcharr-web
+
+    - name: Deploy Dispatcharr Celery Worker
+      kubernetes.core.k8s:
+        kubeconfig: /etc/rancher/k3s/k3s.yaml
+        state: "{{ desired_state }}"
+        definition:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: dispatcharr-celery
+            namespace: livetv
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: dispatcharr-celery
+            template:
+              metadata:
+                labels:
+                  app: dispatcharr-celery
+              spec:
+                containers:
+                  - name: dispatcharr-celery
+                    image: ghcr.io/dispatcharr/dispatcharr:0.5.1-arm64
+                    command: ["celery"]
+                    args: ["-A", "dispatcharr", "worker", "-l", "info"]
+                    env:
+                      - name: POSTGRES_HOST
+                        value: dispatcharr-db
+                      - name: POSTGRES_DB
+                        value: dispatcharr
+                      - name: POSTGRES_USER
+                        value: dispatch
+                      - name: POSTGRES_PASSWORD
+                        value: secret
+                      - name: REDIS_HOST
+                        value: dispatcharr-redis
+                      - name: CELERY_BROKER_URL
+                        value: redis://dispatcharr-redis:6379/0

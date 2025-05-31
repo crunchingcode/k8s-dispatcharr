@@ -1,0 +1,13 @@
+---
+all:
+  children:
+    master:
+      hosts:
+        your-master-node:
+    workers:
+      hosts:
+        worker-nodes-here:
+
+
+
+
